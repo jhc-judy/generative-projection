@@ -1,3 +1,4 @@
+import platform
 import time
 from datetime import datetime
 
@@ -6,51 +7,41 @@ import numpy as np
 import pygame
 
 from controls import Controls
-from renderer.shader_renderer import ShaderRenderer
-from scenes.origami_cat import OrigamiCatScene
+from shaders import load_scene, load_renderer
 
 
-# =========================================================
-# Scene selection
-# =========================================================
+# ============================================================
+# Scene
+# ============================================================
 
-# Change this to:
-#
-#     "organic"
-#
-# whenever you want to run the first shader again.
-
-ACTIVE_SCENE = "origami_cat"
+ACTIVE_SCENE = "shader_03_rolling_colors"
 
 
-# =========================================================
-# Pygame
-# =========================================================
-
-pygame.init()
-
+# ============================================================
+# Window / recording settings
+# ============================================================
 
 WIDTH = 1280
 HEIGHT = 720
 
-
-# Video playback frame rate.
-#
-# The recorder duplicates frames when rendering runs
-# slower than this so recorded time still matches
-# real elapsed time.
-
+DISPLAY_FPS = 60
 RECORDING_FPS = 60
 
+# Keep exported video at 1280 x 720 even on a Retina Mac.
+RECORDING_WIDTH = WIDTH
+RECORDING_HEIGHT = HEIGHT
 
-# Display target.
 
-DISPLAY_FPS = 60
+# ============================================================
+# Pygame
+# ============================================================
+
+pygame.init()
 
 
-# =========================================================
+# ============================================================
 # OpenGL setup
-# =========================================================
+# ============================================================
 
 pygame.display.gl_set_attribute(
     pygame.GL_CONTEXT_MAJOR_VERSION,
@@ -66,6 +57,21 @@ pygame.display.gl_set_attribute(
     pygame.GL_CONTEXT_PROFILE_MASK,
     pygame.GL_CONTEXT_PROFILE_CORE
 )
+
+
+# ------------------------------------------------------------
+# IMPORTANT FOR macOS
+#
+# Modern OpenGL on macOS requires a forward-compatible
+# core-profile context.
+# ------------------------------------------------------------
+
+if platform.system() == "Darwin":
+    pygame.display.gl_set_attribute(
+        pygame.GL_CONTEXT_FLAGS,
+        pygame.GL_CONTEXT_FORWARD_COMPATIBLE_FLAG
+    )
+
 
 pygame.display.gl_set_attribute(
     pygame.GL_DOUBLEBUFFER,
@@ -85,7 +91,7 @@ screen = pygame.display.set_mode(
 
 
 pygame.display.set_caption(
-    f"Generative Projection — {ACTIVE_SCENE}"
+    "Generative Projection"
 )
 
 
@@ -99,168 +105,158 @@ minor = pygame.display.gl_get_attribute(
 
 
 print(
-    f"OpenGL context: "
-    f"{major}.{minor}"
+    f"OpenGL context: {major}.{minor}"
 )
 
 
-# =========================================================
-# App setup
-# =========================================================
+# ============================================================
+# Scene
+# ============================================================
+
+scene = load_scene(
+    ACTIVE_SCENE
+)
+
+shader_name = getattr(
+    scene,
+    "shader_name",
+    ACTIVE_SCENE
+)
+
+
+# ============================================================
+# Controls
+# ============================================================
 
 controls = Controls()
 
 
-# ---------------------------------------------------------
-# Scene
-# ---------------------------------------------------------
-
-scene = None
-
-
-if ACTIVE_SCENE == "origami_cat":
-
-    scene = OrigamiCatScene()
-
-    shader_name = (
-        scene.shader_name
-    )
-
-
-elif ACTIVE_SCENE == "organic":
-
-    # The original shader does not currently need
-    # a Python scene object.
-
-    shader_name = "organic"
-
-
-else:
-
-    raise ValueError(
-        f"Unknown scene: "
-        f"{ACTIVE_SCENE}"
-    )
-
-
-# ---------------------------------------------------------
+# ============================================================
 # Renderer
-# ---------------------------------------------------------
+# ============================================================
 
-renderer = ShaderRenderer(
+renderer = load_renderer(
+    shader_name,
     WIDTH,
-    HEIGHT,
-    shader_name=shader_name
+    HEIGHT
 )
 
 
+# ------------------------------------------------------------
+# Retina / HiDPI framebuffer
+#
+# On Windows this will normally be 1280 x 720.
+#
+# On a Retina Mac it may be something like:
+#
+#     window:       1280 x 720
+#     framebuffer:  2560 x 1440
+#
+# The OpenGL viewport MUST use framebuffer pixels.
+# ------------------------------------------------------------
+
+framebuffer_width, framebuffer_height = (
+    renderer.ctx.screen.size
+)
+
+
+print(
+    "Window size:",
+    pygame.display.get_window_size()
+)
+
+print(
+    "Framebuffer size:",
+    (
+        framebuffer_width,
+        framebuffer_height
+    )
+)
+
+
+renderer.resize(
+    framebuffer_width,
+    framebuffer_height
+)
+
+
+# ============================================================
+# Timing
+# ============================================================
+
 clock = pygame.time.Clock()
 
-
 start_time = time.perf_counter()
-
 
 running = True
 
 
-# =========================================================
+# ============================================================
 # Recording state
-# =========================================================
+# ============================================================
 
 recording = False
 
 video_writer = None
 
-
-recording_width = WIDTH
-
-recording_height = HEIGHT
-
-
 recording_start_time = 0.0
 
-
-# Number of frames that have actually been written
-# into the MP4.
-
 recorded_frame_count = 0
-
 
 current_recording_filename = None
 
 
-# =========================================================
-# Recording helpers
-# =========================================================
+# ============================================================
+# Recording
+# ============================================================
 
 def start_recording():
-
     global recording
-
     global video_writer
-
     global recording_start_time
-
     global recorded_frame_count
-
     global current_recording_filename
-
 
     timestamp = datetime.now().strftime(
         "%Y%m%d_%H%M%S"
     )
 
-
     current_recording_filename = (
-        f"{ACTIVE_SCENE}_"
-        f"{timestamp}.mp4"
+        f"shader_recording_{timestamp}.mp4"
     )
-
 
     fourcc = cv2.VideoWriter_fourcc(
         *"mp4v"
     )
-
 
     video_writer = cv2.VideoWriter(
         current_recording_filename,
         fourcc,
         RECORDING_FPS,
         (
-            recording_width,
-            recording_height
+            RECORDING_WIDTH,
+            RECORDING_HEIGHT
         )
     )
 
-
     if not video_writer.isOpened():
-
         print(
             "Could not open video writer."
         )
 
         video_writer = None
-
         current_recording_filename = None
-
         recording = False
 
         return
-
-
-    # This is the real-world moment
-    # recording begins.
 
     recording_start_time = (
         time.perf_counter()
     )
 
-
     recorded_frame_count = 0
 
-
     recording = True
-
 
     print(
         f"Recording started: "
@@ -269,117 +265,108 @@ def start_recording():
 
 
 def stop_recording():
-
     global recording
-
     global video_writer
-
     global current_recording_filename
-
 
     if not recording:
         return
 
-
     recording = False
 
-
     if video_writer is not None:
-
         video_writer.release()
 
         video_writer = None
-
 
     print(
         "Recording stopped."
     )
 
-
     if current_recording_filename is not None:
-
         print(
             f"Saved: "
             f"{current_recording_filename}"
         )
-
 
     current_recording_filename = None
 
 
 def capture_frame():
     """
-    Read the current OpenGL framebuffer
-    and convert it into the BGR frame
-    format expected by OpenCV.
+    Read the REAL OpenGL framebuffer.
+
+    On a Retina Mac this can be larger than the
+    logical Pygame window.
+
+    The captured frame is resized back to the desired
+    1280 x 720 recording resolution afterward.
     """
+
+    fb_width, fb_height = (
+        renderer.ctx.screen.size
+    )
 
     raw = renderer.ctx.screen.read(
         components=3,
         alignment=1
     )
 
-
     frame = np.frombuffer(
         raw,
         dtype=np.uint8
     )
 
-
     frame = frame.reshape(
         (
-            recording_height,
-            recording_width,
+            fb_height,
+            fb_width,
             3
         )
     )
 
-
-    # OpenGL framebuffer origin is bottom-left.
-    # Video images expect top-left.
-
+    # OpenGL:
+    # bottom-left origin
+    #
+    # Video:
+    # top-left origin
     frame = np.flipud(
         frame
     )
 
-
     # OpenGL gives RGB.
-    # OpenCV VideoWriter expects BGR.
-
+    # OpenCV expects BGR.
     frame = cv2.cvtColor(
         frame,
         cv2.COLOR_RGB2BGR
     )
 
+    # Retina framebuffers may be 2x resolution.
+    # Keep output video at normal 1280 x 720.
+    if (
+        fb_width != RECORDING_WIDTH
+        or fb_height != RECORDING_HEIGHT
+    ):
+        frame = cv2.resize(
+            frame,
+            (
+                RECORDING_WIDTH,
+                RECORDING_HEIGHT
+            ),
+            interpolation=cv2.INTER_AREA
+        )
 
     return frame
 
 
-def record_frame_at_real_time(
-    frame
-):
+def record_frame_at_real_time(frame):
     """
-    Write enough copies of the current rendered frame
-    so that video duration stays synchronized with
-    actual elapsed recording time.
-
-    Example:
-
-    If rendering drops to 30 FPS while the MP4
-    is 60 FPS, each rendered image will normally
-    be written twice.
-
-    That means:
-
-        1 second live = 1 second video
-
-    instead of:
-
-        1 second live = 0.5 second video
+    Duplicate rendered frames as necessary so
+    recorded duration stays synchronized with
+    real elapsed time.
     """
 
     global recorded_frame_count
-
 
     if (
         not recording
@@ -387,45 +374,27 @@ def record_frame_at_real_time(
     ):
         return
 
-
     elapsed_recording_time = (
         time.perf_counter()
         - recording_start_time
     )
-
-
-    # At this point in real time,
-    # this many frames should exist
-    # in a 60 FPS recording.
 
     target_frame_count = int(
         elapsed_recording_time
         * RECORDING_FPS
     )
 
-
-    # Make sure the first visible
-    # frame gets written.
-
     if recorded_frame_count == 0:
-
         video_writer.write(
             frame
         )
 
         recorded_frame_count = 1
 
-
-    # If rendering has fallen behind the
-    # video's nominal frame rate, repeat
-    # the newest rendered frame until the
-    # MP4 catches up with real time.
-
     while (
         recorded_frame_count
         < target_frame_count
     ):
-
         video_writer.write(
             frame
         )
@@ -433,22 +402,62 @@ def record_frame_at_real_time(
         recorded_frame_count += 1
 
 
-# =========================================================
+# ============================================================
+# Framebuffer resize helper
+# ============================================================
+
+def update_framebuffer_size():
+    """
+    Synchronize ModernGL with the actual drawable framebuffer.
+
+    This matters especially on Retina displays.
+    """
+
+    global framebuffer_width
+    global framebuffer_height
+
+    new_width, new_height = (
+        renderer.ctx.screen.size
+    )
+
+    if (
+        new_width != framebuffer_width
+        or new_height != framebuffer_height
+    ):
+        framebuffer_width = (
+            new_width
+        )
+
+        framebuffer_height = (
+            new_height
+        )
+
+        renderer.resize(
+            framebuffer_width,
+            framebuffer_height
+        )
+
+        print(
+            "Framebuffer resized:",
+            (
+                framebuffer_width,
+                framebuffer_height
+            )
+        )
+
+
+# ============================================================
 # Main loop
-# =========================================================
+# ============================================================
 
 while running:
 
-    dt_ms = clock.tick(
-        DISPLAY_FPS
-    )
-
-
     dt = (
-        dt_ms
+        clock.tick(
+            DISPLAY_FPS
+        )
         / 1000.0
     )
-
 
     current_time = (
         time.perf_counter()
@@ -456,99 +465,84 @@ while running:
     )
 
 
-    # =====================================================
-    # Reset one-frame controller button states
-    # =====================================================
+    # ========================================================
+    # One-frame control states
+    # ========================================================
 
     controls.seed = False
-
     controls.mortality = False
-
     controls.reveal_data = False
-
     controls.reset = False
-
     controls.previous_data = False
-
     controls.next_data = False
 
 
-    # =====================================================
+    # ========================================================
     # Events
-    # =====================================================
+    # ========================================================
 
     for event in pygame.event.get():
 
-
         if event.type == pygame.QUIT:
-
             running = False
 
 
         elif event.type == pygame.KEYDOWN:
 
-
             if event.key == pygame.K_ESCAPE:
-
                 running = False
 
 
             elif event.key == pygame.K_r:
 
-
                 if recording:
-
                     stop_recording()
 
-
                 else:
-
                     start_recording()
 
 
-        # =================================================
+        # ====================================================
+        # Window resizing
+        # ====================================================
+
+        elif event.type in (
+            pygame.WINDOWSIZECHANGED,
+            pygame.VIDEORESIZE
+        ):
+            update_framebuffer_size()
+
+
+        # ====================================================
         # Controller buttons
-        # =================================================
+        # ====================================================
 
         elif event.type == pygame.JOYBUTTONDOWN:
 
-
             if event.button == 0:
-
                 controls.seed = True
 
-
             elif event.button == 1:
-
                 controls.mortality = True
 
-
             elif event.button == 2:
-
                 controls.reveal_data = True
 
-
             elif event.button == 3:
-
                 controls.reset = True
 
-
             elif event.button == 4:
-
                 controls.previous_data = True
 
-
             elif event.button == 5:
-
                 controls.next_data = True
 
 
-    # =====================================================
+    # ========================================================
     # Controller axes
-    # =====================================================
+    # ========================================================
 
     if controls.joystick:
-
 
         axis_count = (
             controls.joystick.get_numaxes()
@@ -556,45 +550,33 @@ while running:
 
 
         if axis_count > 0:
-
             controls.left_x = (
                 controls.apply_deadzone(
-                    controls.joystick.get_axis(
-                        0
-                    )
+                    controls.joystick.get_axis(0)
                 )
             )
 
 
         if axis_count > 1:
-
             controls.left_y = (
                 controls.apply_deadzone(
-                    controls.joystick.get_axis(
-                        1
-                    )
+                    controls.joystick.get_axis(1)
                 )
             )
 
 
         if axis_count > 2:
-
             controls.right_x = (
                 controls.apply_deadzone(
-                    controls.joystick.get_axis(
-                        2
-                    )
+                    controls.joystick.get_axis(2)
                 )
             )
 
 
         if axis_count > 3:
-
             controls.right_y = (
                 controls.apply_deadzone(
-                    controls.joystick.get_axis(
-                        3
-                    )
+                    controls.joystick.get_axis(3)
                 )
             )
 
@@ -602,65 +584,61 @@ while running:
         if axis_count > 4:
 
             raw_left = (
-                controls.joystick.get_axis(
-                    4
-                )
+                controls.joystick.get_axis(4)
             )
 
-
             controls.left_trigger = (
-                raw_left
-                + 1.0
+                raw_left + 1.0
             ) / 2.0
 
 
         if axis_count > 5:
 
             raw_right = (
-                controls.joystick.get_axis(
-                    5
-                )
+                controls.joystick.get_axis(5)
             )
 
-
             controls.right_trigger = (
-                raw_right
-                + 1.0
+                raw_right + 1.0
             ) / 2.0
 
 
-    # =====================================================
+    # ========================================================
+    # Keep framebuffer dimensions synchronized
+    #
+    # Cheap enough to check every frame and protects against
+    # Retina/window transitions that don't emit the event
+    # we expect.
+    # ========================================================
+
+    update_framebuffer_size()
+
+
+    # ========================================================
+    # Scene update
+    # ========================================================
+
+    scene.update(
+        dt
+    )
+
+    scene_uniforms = (
+        scene.get_uniforms()
+    )
+
+
+    # ========================================================
     # Shader interaction
-    # =====================================================
+    # ========================================================
 
     activity = abs(
         controls.left_y
     )
 
 
-    # =====================================================
-    # Scene update
-    # =====================================================
-
-    scene_uniforms = None
-
-
-    if scene is not None:
-
-        scene.update(
-            dt
-        )
-
-        scene_uniforms = (
-            scene.get_uniforms()
-        )
-
-
-    # =====================================================
+    # ========================================================
     # Render
-    #
-    # current_time remains real elapsed time.
-    # =====================================================
+    # ========================================================
 
     renderer.render(
         current_time,
@@ -669,49 +647,37 @@ while running:
     )
 
 
-    # =====================================================
+    # ========================================================
     # Recording
-    #
-    # Capture before pygame.display.flip(),
-    # while the freshly rendered framebuffer
-    # is still available.
-    # =====================================================
+    # ========================================================
 
     if (
         recording
         and video_writer is not None
     ):
-
-        frame = (
-            capture_frame()
-        )
-
+        frame = capture_frame()
 
         record_frame_at_real_time(
             frame
         )
 
 
-    # =====================================================
-    # Show frame
-    # =====================================================
+    # ========================================================
+    # Present
+    # ========================================================
 
     pygame.display.flip()
 
 
-# =========================================================
+# ============================================================
 # Cleanup
-# =========================================================
+# ============================================================
 
 if recording:
-
     stop_recording()
 
-
 elif video_writer is not None:
-
     video_writer.release()
-
     video_writer = None
 
 
