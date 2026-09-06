@@ -7,19 +7,44 @@ import pygame
 
 from controls import Controls
 from renderer.shader_renderer import ShaderRenderer
+from scenes.origami_cat import OrigamiCatScene
 
+
+# =========================================================
+# Scene selection
+# =========================================================
+
+# Change this to:
+#
+#     "organic"
+#
+# whenever you want to run the first shader again.
+
+ACTIVE_SCENE = "origami_cat"
+
+
+# =========================================================
+# Pygame
+# =========================================================
 
 pygame.init()
+
 
 WIDTH = 1280
 HEIGHT = 720
 
+
 # Video playback frame rate.
-# The recorder will duplicate frames when rendering runs
-# slower than this so recorded time still matches real time.
+#
+# The recorder duplicates frames when rendering runs
+# slower than this so recorded time still matches
+# real elapsed time.
+
 RECORDING_FPS = 60
 
+
 # Display target.
+
 DISPLAY_FPS = 60
 
 
@@ -49,14 +74,18 @@ pygame.display.gl_set_attribute(
 
 
 screen = pygame.display.set_mode(
-    (WIDTH, HEIGHT),
+    (
+        WIDTH,
+        HEIGHT
+    ),
     pygame.OPENGL
     | pygame.DOUBLEBUF
     | pygame.RESIZABLE
 )
 
+
 pygame.display.set_caption(
-    "Generative Projection"
+    f"Generative Projection — {ACTIVE_SCENE}"
 )
 
 
@@ -68,8 +97,10 @@ minor = pygame.display.gl_get_attribute(
     pygame.GL_CONTEXT_MINOR_VERSION
 )
 
+
 print(
-    f"OpenGL context: {major}.{minor}"
+    f"OpenGL context: "
+    f"{major}.{minor}"
 )
 
 
@@ -79,14 +110,55 @@ print(
 
 controls = Controls()
 
+
+# ---------------------------------------------------------
+# Scene
+# ---------------------------------------------------------
+
+scene = None
+
+
+if ACTIVE_SCENE == "origami_cat":
+
+    scene = OrigamiCatScene()
+
+    shader_name = (
+        scene.shader_name
+    )
+
+
+elif ACTIVE_SCENE == "organic":
+
+    # The original shader does not currently need
+    # a Python scene object.
+
+    shader_name = "organic"
+
+
+else:
+
+    raise ValueError(
+        f"Unknown scene: "
+        f"{ACTIVE_SCENE}"
+    )
+
+
+# ---------------------------------------------------------
+# Renderer
+# ---------------------------------------------------------
+
 renderer = ShaderRenderer(
     WIDTH,
-    HEIGHT
+    HEIGHT,
+    shader_name=shader_name
 )
+
 
 clock = pygame.time.Clock()
 
+
 start_time = time.perf_counter()
+
 
 running = True
 
@@ -96,16 +168,23 @@ running = True
 # =========================================================
 
 recording = False
+
 video_writer = None
 
+
 recording_width = WIDTH
+
 recording_height = HEIGHT
+
 
 recording_start_time = 0.0
 
+
 # Number of frames that have actually been written
 # into the MP4.
+
 recorded_frame_count = 0
+
 
 current_recording_filename = None
 
@@ -115,23 +194,33 @@ current_recording_filename = None
 # =========================================================
 
 def start_recording():
+
     global recording
+
     global video_writer
+
     global recording_start_time
+
     global recorded_frame_count
+
     global current_recording_filename
+
 
     timestamp = datetime.now().strftime(
         "%Y%m%d_%H%M%S"
     )
 
+
     current_recording_filename = (
-        f"shader_recording_{timestamp}.mp4"
+        f"{ACTIVE_SCENE}_"
+        f"{timestamp}.mp4"
     )
+
 
     fourcc = cv2.VideoWriter_fourcc(
         *"mp4v"
     )
+
 
     video_writer = cv2.VideoWriter(
         current_recording_filename,
@@ -143,22 +232,35 @@ def start_recording():
         )
     )
 
+
     if not video_writer.isOpened():
+
         print(
             "Could not open video writer."
         )
 
         video_writer = None
+
         current_recording_filename = None
+
         recording = False
+
         return
 
-    # This is the real-world moment recording begins.
-    recording_start_time = time.perf_counter()
+
+    # This is the real-world moment
+    # recording begins.
+
+    recording_start_time = (
+        time.perf_counter()
+    )
+
 
     recorded_frame_count = 0
 
+
     recording = True
+
 
     print(
         f"Recording started: "
@@ -167,36 +269,49 @@ def start_recording():
 
 
 def stop_recording():
+
     global recording
+
     global video_writer
+
     global current_recording_filename
+
 
     if not recording:
         return
 
+
     recording = False
 
+
     if video_writer is not None:
+
         video_writer.release()
+
         video_writer = None
+
 
     print(
         "Recording stopped."
     )
 
+
     if current_recording_filename is not None:
+
         print(
             f"Saved: "
             f"{current_recording_filename}"
         )
+
 
     current_recording_filename = None
 
 
 def capture_frame():
     """
-    Read the current OpenGL framebuffer and convert it
-    into the BGR frame format expected by OpenCV.
+    Read the current OpenGL framebuffer
+    and convert it into the BGR frame
+    format expected by OpenCV.
     """
 
     raw = renderer.ctx.screen.read(
@@ -204,10 +319,12 @@ def capture_frame():
         alignment=1
     )
 
+
     frame = np.frombuffer(
         raw,
         dtype=np.uint8
     )
+
 
     frame = frame.reshape(
         (
@@ -217,21 +334,30 @@ def capture_frame():
         )
     )
 
+
     # OpenGL framebuffer origin is bottom-left.
     # Video images expect top-left.
-    frame = np.flipud(frame)
+
+    frame = np.flipud(
+        frame
+    )
+
 
     # OpenGL gives RGB.
     # OpenCV VideoWriter expects BGR.
+
     frame = cv2.cvtColor(
         frame,
         cv2.COLOR_RGB2BGR
     )
 
+
     return frame
 
 
-def record_frame_at_real_time(frame):
+def record_frame_at_real_time(
+    frame
+):
     """
     Write enough copies of the current rendered frame
     so that video duration stays synchronized with
@@ -239,17 +365,21 @@ def record_frame_at_real_time(frame):
 
     Example:
 
-    If rendering drops to 30 FPS while the MP4 is 60 FPS,
-    each rendered image will normally be written twice.
+    If rendering drops to 30 FPS while the MP4
+    is 60 FPS, each rendered image will normally
+    be written twice.
 
     That means:
+
         1 second live = 1 second video
 
     instead of:
+
         1 second live = 0.5 second video
     """
 
     global recorded_frame_count
+
 
     if (
         not recording
@@ -257,31 +387,48 @@ def record_frame_at_real_time(frame):
     ):
         return
 
+
     elapsed_recording_time = (
         time.perf_counter()
         - recording_start_time
     )
 
-    # At this point in real time, this many frames
-    # should exist in a 60 FPS recording.
+
+    # At this point in real time,
+    # this many frames should exist
+    # in a 60 FPS recording.
+
     target_frame_count = int(
         elapsed_recording_time
         * RECORDING_FPS
     )
 
-    # Make sure the first visible frame gets written.
+
+    # Make sure the first visible
+    # frame gets written.
+
     if recorded_frame_count == 0:
-        video_writer.write(frame)
+
+        video_writer.write(
+            frame
+        )
+
         recorded_frame_count = 1
 
-    # If rendering has fallen behind the video's nominal
-    # frame rate, repeat the most recent rendered frame
-    # until the MP4 catches up to real elapsed time.
+
+    # If rendering has fallen behind the
+    # video's nominal frame rate, repeat
+    # the newest rendered frame until the
+    # MP4 catches up with real time.
+
     while (
         recorded_frame_count
         < target_frame_count
     ):
-        video_writer.write(frame)
+
+        video_writer.write(
+            frame
+        )
 
         recorded_frame_count += 1
 
@@ -292,9 +439,16 @@ def record_frame_at_real_time(frame):
 
 while running:
 
-    clock.tick(
+    dt_ms = clock.tick(
         DISPLAY_FPS
     )
+
+
+    dt = (
+        dt_ms
+        / 1000.0
+    )
+
 
     current_time = (
         time.perf_counter()
@@ -307,10 +461,15 @@ while running:
     # =====================================================
 
     controls.seed = False
+
     controls.mortality = False
+
     controls.reveal_data = False
+
     controls.reset = False
+
     controls.previous_data = False
+
     controls.next_data = False
 
 
@@ -320,21 +479,30 @@ while running:
 
     for event in pygame.event.get():
 
+
         if event.type == pygame.QUIT:
+
             running = False
 
 
         elif event.type == pygame.KEYDOWN:
 
+
             if event.key == pygame.K_ESCAPE:
+
                 running = False
+
 
             elif event.key == pygame.K_r:
 
+
                 if recording:
+
                     stop_recording()
 
+
                 else:
+
                     start_recording()
 
 
@@ -344,22 +512,34 @@ while running:
 
         elif event.type == pygame.JOYBUTTONDOWN:
 
+
             if event.button == 0:
+
                 controls.seed = True
 
+
             elif event.button == 1:
+
                 controls.mortality = True
 
+
             elif event.button == 2:
+
                 controls.reveal_data = True
 
+
             elif event.button == 3:
+
                 controls.reset = True
 
+
             elif event.button == 4:
+
                 controls.previous_data = True
 
+
             elif event.button == 5:
+
                 controls.next_data = True
 
 
@@ -368,6 +548,7 @@ while running:
     # =====================================================
 
     if controls.joystick:
+
 
         axis_count = (
             controls.joystick.get_numaxes()
@@ -378,7 +559,9 @@ while running:
 
             controls.left_x = (
                 controls.apply_deadzone(
-                    controls.joystick.get_axis(0)
+                    controls.joystick.get_axis(
+                        0
+                    )
                 )
             )
 
@@ -387,7 +570,9 @@ while running:
 
             controls.left_y = (
                 controls.apply_deadzone(
-                    controls.joystick.get_axis(1)
+                    controls.joystick.get_axis(
+                        1
+                    )
                 )
             )
 
@@ -396,7 +581,9 @@ while running:
 
             controls.right_x = (
                 controls.apply_deadzone(
-                    controls.joystick.get_axis(2)
+                    controls.joystick.get_axis(
+                        2
+                    )
                 )
             )
 
@@ -405,7 +592,9 @@ while running:
 
             controls.right_y = (
                 controls.apply_deadzone(
-                    controls.joystick.get_axis(3)
+                    controls.joystick.get_axis(
+                        3
+                    )
                 )
             )
 
@@ -413,22 +602,30 @@ while running:
         if axis_count > 4:
 
             raw_left = (
-                controls.joystick.get_axis(4)
+                controls.joystick.get_axis(
+                    4
+                )
             )
 
+
             controls.left_trigger = (
-                raw_left + 1.0
+                raw_left
+                + 1.0
             ) / 2.0
 
 
         if axis_count > 5:
 
             raw_right = (
-                controls.joystick.get_axis(5)
+                controls.joystick.get_axis(
+                    5
+                )
             )
 
+
             controls.right_trigger = (
-                raw_right + 1.0
+                raw_right
+                + 1.0
             ) / 2.0
 
 
@@ -442,26 +639,42 @@ while running:
 
 
     # =====================================================
+    # Scene update
+    # =====================================================
+
+    scene_uniforms = None
+
+
+    if scene is not None:
+
+        scene.update(
+            dt
+        )
+
+        scene_uniforms = (
+            scene.get_uniforms()
+        )
+
+
+    # =====================================================
     # Render
     #
-    # IMPORTANT:
-    # current_time remains REAL elapsed time.
-    #
-    # So the shader itself moves at exactly the speed
-    # you're seeing in the window.
+    # current_time remains real elapsed time.
     # =====================================================
 
     renderer.render(
         current_time,
-        activity=activity
+        activity=activity,
+        uniforms=scene_uniforms
     )
 
 
     # =====================================================
     # Recording
     #
-    # Capture before pygame.display.flip(), while the
-    # freshly rendered framebuffer is still available.
+    # Capture before pygame.display.flip(),
+    # while the freshly rendered framebuffer
+    # is still available.
     # =====================================================
 
     if (
@@ -469,7 +682,10 @@ while running:
         and video_writer is not None
     ):
 
-        frame = capture_frame()
+        frame = (
+            capture_frame()
+        )
+
 
         record_frame_at_real_time(
             frame
@@ -488,10 +704,14 @@ while running:
 # =========================================================
 
 if recording:
+
     stop_recording()
 
+
 elif video_writer is not None:
+
     video_writer.release()
+
     video_writer = None
 
 
