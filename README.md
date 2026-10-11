@@ -2,9 +2,7 @@
 
 A series of real-time generative visual experiments exploring autonomous movement, spatial navigation, disturbance, accumulation, and changing visual behavior.
 
-The project was developed as part of my ongoing investigation into how computational systems can behave as active components within sculptural and installation work rather than as fixed video playback.
-
-These studies directly inform the real-time animation system used in *Memory of the Fish Jar*, particularly the movement of autonomous agents, reactions to disturbance, and gradual behavioral settling over time.
+The project was developed as part of an ongoing investigation into how computational systems can behave as active components within sculptural and installation work rather than as fixed video playback.
 
 ## Tools
 
